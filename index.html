@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PixelForge — Editor mínimo 1.5</title>
+<style>
+:root{color-scheme:dark;--bg:#0d1220;--panel:#151d2c;--panel2:#1b2638;--stroke:#344157;--text:#f1f5fb;--muted:#a1adc2;--accent:#9b92ff}
+*{box-sizing:border-box}
+html,body{margin:0;min-width:650px;min-height:100%;background:var(--bg);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--text)}
+button,input,textarea{font:inherit}
+button{border:1px solid var(--stroke);border-radius:9px;color:var(--text);background:var(--panel2);padding:9px 11px;cursor:pointer}
+button:hover{border-color:#677a9a;background:#27364d}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+header{height:59px;display:flex;align-items:center;padding:0 20px;border-bottom:1px solid var(--stroke);background:#121a29;gap:12px}
+header strong{font-size:18px;letter-spacing:-.4px}
+header .sub{color:var(--muted);font-size:12px}
+.layout{display:grid;grid-template-columns:192px minmax(0,1fr) 214px;height:calc(100dvh - 59px);min-height:540px}
+aside{background:var(--panel);padding:20px 14px;min-width:0}
+.left{border-right:1px solid var(--stroke)}.right{border-left:1px solid var(--stroke)}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:0 0 13px}
+.tools{display:grid;gap:9px}
+.tool{display:flex;align-items:center;gap:10px;text-align:left;width:100%;min-height:44px}
+.tool svg{width:18px;height:18px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.tool.active{background:#302d5a;color:#fff;border-color:var(--accent)}
+.color-control{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:12px;margin-top:13px}
+input[type=color]{padding:2px;width:40px;height:35px;border:1px solid var(--stroke);border-radius:7px;background:var(--panel2);cursor:pointer}
+.sep{height:1px;background:var(--stroke);margin:24px 0}
+.size-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.size-grid label{font-size:12px;color:var(--muted)}
+.size-grid input{display:block;width:100%;padding:9px 7px;margin-top:5px;background:#0d1625;color:var(--text);border:1px solid var(--stroke);border-radius:8px}
+#applySize{width:100%;background:#3c3479;border-color:#796cf0;font-weight:650}
+.small{margin-top:10px;color:var(--muted);font-size:11px;line-height:1.5}
+.editor{display:grid;grid-template-rows:minmax(0,1fr) 193px;min-width:0;min-height:0}
+.viewer{display:flex;flex-direction:column;min-height:0;min-width:0;background:radial-gradient(ellipse at 50% 30%,#1b2b41,#0c1320 75%)}
+.viewer-top{padding:13px 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #2c374a;color:var(--muted);font-size:12px}
+.viewer-top strong{color:var(--text);font-size:13px}
+.view-controls{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+.view-controls button,.view-controls select{padding:5px 7px;font-size:11px;border-radius:6px}
+.view-controls select{color:var(--text);background:var(--panel2);border:1px solid var(--stroke);cursor:pointer}
+.view-controls .grid-toggle[aria-pressed="true"]{border-color:var(--accent);background:#302d5a}
+#zoomLevel{font-variant-numeric:tabular-nums;min-width:36px;text-align:right;color:var(--text)}
+.canvas-stage{flex:1;min-height:0;min-width:0;position:relative;overflow:hidden;touch-action:none;user-select:none;cursor:default}
+.paper{position:absolute;top:0;left:0;box-shadow:0 0 0 1px #53637d,0 20px 45px #0007;background-color:#d4dbe6;background-image:linear-gradient(45deg,#aebacd 25%,transparent 25%),linear-gradient(-45deg,#aebacd 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#aebacd 75%),linear-gradient(-45deg,transparent 75%,#aebacd 75%);background-size:24px 24px;background-position:0 0,0 12px,12px -12px,-12px 0}
+#canvas{display:block;image-rendering:pixelated;touch-action:none;cursor:crosshair}
+.pixel-grid{pointer-events:none;position:absolute;inset:0;background-image:linear-gradient(to right,#1f2f4650 1px,transparent 1px),linear-gradient(to bottom,#1f2f4650 1px,transparent 1px)}
+.timeline{border-top:1px solid var(--stroke);background:#111a28;min-width:0;display:flex;flex-direction:column}
+.timeline-head{height:51px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid #29364a}
+.timeline-head h2{margin:0}
+.timeline-actions{display:flex;align-items:center;gap:9px}
+.play-button{padding:6px 11px;font-size:12px;min-width:98px}
+.play-button[aria-pressed="true"]{background:#302d5a;border-color:var(--accent)}
+.play-button:disabled{opacity:.48;cursor:not-allowed}
+.fps-control{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted)}
+.fps-control input{width:53px;padding:6px 5px;background:#0d1625;color:var(--text);border:1px solid var(--stroke);border-radius:6px;text-align:center;font-variant-numeric:tabular-nums}
+.add{padding:6px 10px;font-size:13px}
+#frames{display:flex;gap:10px;align-items:flex-start;overflow:auto;min-width:0;flex:1;padding:13px 18px}
+.frame{flex:none;width:86px;display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center;padding:6px 5px;border:1px solid var(--stroke);border-radius:8px;background:#1c2a3d;color:var(--muted);font-size:11px}
+.frame-select{display:grid;justify-items:center;gap:4px;padding:0;background:transparent;border:0;color:inherit;width:100%;font-size:11px}
+.frame-select:hover{background:transparent;border:0}
+.frame-text{width:100%;padding:4px 5px;font-size:11px;line-height:1.2;border-radius:5px}
+.frame.selected{background:#302d58;border-color:var(--accent);color:white}
+.thumb{display:block;width:48px;height:48px;image-rendering:pixelated;background-color:#dae1e9;background-image:linear-gradient(45deg,#abb9cf 25%,transparent 25%),linear-gradient(-45deg,#abb9cf 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#abb9cf 75%),linear-gradient(-45deg,transparent 75%,#abb9cf 75%);background-size:14px 14px;background-position:0 0,0 7px,7px -7px,-7px 0;border:1px solid #566984}
+.layers-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px;gap:5px}.layers-head h2{margin:0}
+#layers{display:flex;flex-direction:column;gap:8px}
+.layer{display:flex;gap:5px;align-items:center;padding:5px;border:1px solid var(--stroke);border-radius:9px;background:#1a273a}
+.layer.selected{border-color:var(--accent);background:#302d58}
+.layer-name{padding:6px 2px;flex:1;min-width:0;background:none;border:none;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+.eye{padding:5px 7px;min-width:31px;border:0;background:none;font-size:15px;color:#bbcae2}
+.eye.off{opacity:.45}
+.pixel-dialog{width:min(740px,calc(100vw - 48px));max-height:calc(100dvh - 48px);padding:0;border:1px solid var(--stroke);border-radius:12px;background:var(--panel);color:var(--text);box-shadow:0 24px 90px #000b}
+.pixel-dialog::backdrop{background:#020715bf}
+.pixel-dialog-head{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:14px 17px;border-bottom:1px solid var(--stroke)}
+.pixel-dialog-head strong{font-size:15px}
+.pixel-dialog-body{padding:14px 17px;display:flex;flex-direction:column;gap:10px}
+.pixel-dialog-body p{margin:0;color:var(--muted);font-size:12px}
+#pixelText{display:block;resize:vertical;min-height:220px;height:min(58dvh,500px);width:100%;padding:12px;background:#0d1625;color:#e8f0ff;border:1px solid var(--stroke);border-radius:8px;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre;tab-size:2}
+#pixelTextStatus{min-height:18px;font-size:12px;color:var(--muted);white-space:pre-wrap}
+#pixelTextStatus.error{color:#ff9b9b}
+#pixelTextStatus.success{color:#9de4b9}
+.pixel-dialog-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+#applyPixelText{background:#3c3479;border-color:#796cf0;font-weight:650}
+@media (max-width:850px){.layout{grid-template-columns:148px minmax(0,1fr) 166px}.left,.right{padding:15px 9px}.canvas-stage{padding:10px}.viewer-top{padding:11px}}
+</style>
+</head>
+<body>
+<header><strong>PixelForge</strong><span class="sub">Editor de píxeles por capas</span></header>
+<div class="layout">
+  <aside class="left">
+    <h2>Herramientas</h2>
+    <div class="tools">
+      <button type="button" id="pencil" class="tool active" aria-pressed="true"><svg viewBox="0 0 24 24"><path d="M12 19l7-7 3 3-7 7-5 1zM18 13l3 3M3 4l6 6"/></svg>Pincel</button>
+      <button type="button" id="eraser" class="tool" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M20 14l-7 7H6l-4-4L14 5a2 2 0 0 1 3 0l5 5a2 2 0 0 1 0 3zM8 11l7 7M13 21h9"/></svg>Borrador</button>
+    </div>
+    <label class="color-control"><input type="color" id="color" value="#865df5"> Color del pincel</label>
+    <div class="sep"></div>
+    <h2>Tamaño de la hoja</h2>
+    <div class="size-grid"><label>Ancho (px)<input id="width" type="number" min="8" max="128" step="1" value="32"></label><label>Alto (px)<input id="height" type="number" min="8" max="128" step="1" value="32"></label></div>
+    <button id="applySize" type="button">Aplicar tamaño</button>
+    <div class="small">De 8 a 128 píxeles por lado. El dibujo se conserva centrado al cambiar la hoja.</div>
+  </aside>
+  <main class="editor">
+    <section class="viewer" aria-label="Hoja de píxeles">
+      <div class="viewer-top">
+        <strong>Hoja de píxeles</strong>
+        <div class="view-controls">
+          <span id="resolution">32 × 32 px</span>
+          <button type="button" id="gridToggle" class="grid-toggle" aria-pressed="true" title="Mostrar u ocultar la cuadrícula">Cuadrícula</button>
+          <select id="gridStep" aria-label="Separación de la cuadrícula" title="Cuadrícula cada 1, 4 u 8 píxeles">
+            <option value="1">1 px</option><option value="4">4 px</option><option value="8">8 px</option>
+          </select>
+          <span id="zoomLevel" title="Zoom del lienzo">12×</span>
+          <button type="button" id="fitView" title="Centrar y ajustar el lienzo a la ventana">Ajustar</button>
+        </div>
+      </div>
+      <div class="canvas-stage" id="stage" title="Rueda: zoom · Espacio + arrastrar, o botón central: mover"><div class="paper" id="paper"><canvas id="canvas" width="32" height="32" aria-label="Lienzo para dibujar"></canvas><div class="pixel-grid" id="grid"></div></div></div>
+    </section>
+    <section class="timeline" aria-label="Fotogramas">
+      <div class="timeline-head"><h2>Fotogramas</h2><div class="timeline-actions"><button type="button" id="playPause" class="play-button" aria-pressed="false">▶ Reproducir</button><label class="fps-control">FPS <input type="number" id="fps" min="1" max="60" step="1" value="12" aria-label="Fotogramas por segundo"></label><button type="button" class="add" id="addFrame">+ Fotograma</button></div></div>
+      <div id="frames"></div>
+    </section>
+  </main>
+  <aside class="right" aria-label="Capas">
+    <div class="layers-head"><h2>Capas</h2><button type="button" class="add" id="addLayer">+ Capa</button></div>
+    <div id="layers"></div>
+  </aside>
+</div>
+<dialog id="pixelDialog" class="pixel-dialog" aria-labelledby="pixelDialogTitle">
+  <div class="pixel-dialog-head"><strong id="pixelDialogTitle">Texto del fotograma</strong><button type="button" id="closePixelText" aria-label="Cerrar texto">✕</button></div>
+  <div class="pixel-dialog-body">
+    <p>Edita líneas x,y,color (ej.: 1,2,#FF0000 o 1,2,transparente). Las coordenadas empiezan en (1,1). Solo se modifican los píxeles indicados; los demás se conservan.</p>
+    <textarea id="pixelText" spellcheck="false" aria-label="Colores y coordenadas editables de los píxeles"></textarea>
+    <div id="pixelTextStatus" role="status" aria-live="polite"></div>
+    <div class="pixel-dialog-actions"><button type="button" id="copyPixelText">Copiar texto</button><button type="button" id="dismissPixelText">Cerrar</button><button type="button" id="applyPixelText">Aplicar cambios</button></div>
+  </div>
+</dialog>
+<script>
+(()=>{
+'use strict';
+const $=id=>document.getElementById(id);
+const STORAGE='pixelforge-minimal-v1';
+let serial=1;
+const fresh=(w=32,h=32)=>({width:w,height:h,fps:12,frame:0,selected:1,layers:[{id:1,name:'Capa 1',visible:true,cels:[Array(w*h).fill(null)]}]});
+let textFrame=null;
+const app={p:fresh(),tool:'pencil',color:'#865df5',drawing:false,point:null,
+ view:{scale:12,x:0,y:0,manual:false,gridOn:true,gridStep:1},panning:false,panPoint:null,spaceHeld:false,lastStage:null,
+ playback:{running:false,raf:0,anchor:0,base:0}};
+function validate(saved){
+ if(!saved||!Number.isInteger(saved.width)||!Number.isInteger(saved.height)||saved.width<8||saved.width>128||saved.height<8||saved.height>128||!Array.isArray(saved.layers)||!saved.layers.length||saved.layers.length>24)return null;
+ let n=-1;
+ for(const l of saved.layers){if(!Number.isInteger(l.id)||!Array.isArray(l.cels)||!l.cels.length||l.cels.length>72||l.cels.some(c=>!Array.isArray(c)||c.length!==saved.width*saved.height))return null;n=Math.max(n,l.id);}
+ const count=saved.layers[0].cels.length;
+ if(saved.layers.some(l=>l.cels.length!==count))return null;
+ saved.fps=Number.isFinite(saved.fps)?Math.max(1,Math.min(60,Math.round(saved.fps))):12;
+ saved.frame=Math.max(0,Math.min(count-1,saved.frame|0));
+ if(!saved.layers.some(l=>l.id===saved.selected))saved.selected=saved.layers.at(-1).id;
+ serial=n;
+ return saved;
+}
+try{const saved=JSON.parse(localStorage.getItem(STORAGE));app.p=validate(saved)||fresh();}catch{app.p=fresh();}
+const p=()=>app.p;
+const selected=()=>p().layers.find(l=>l.id===p().selected);
+function persist(){try{localStorage.setItem(STORAGE,JSON.stringify(p()));}catch{/* almacenamiento local no disponible */}}
+function drawComposite(ctx,frame){const {width,height,layers}=p();ctx.clearRect(0,0,width,height);for(const l of layers){if(!l.visible)continue;const cel=l.cels[frame];let last='';for(let i=0;i<cel.length;i++){const value=cel[i];if(value===null)continue;if(value!==last){ctx.fillStyle=value;last=value;}ctx.fillRect(i%width,Math.floor(i/width),1,1);}}}
+function drawPage(){const c=$('canvas');if(c.width!==p().width||c.height!==p().height){c.width=p().width;c.height=p().height;}drawComposite(c.getContext('2d'),p().frame);}
+const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
+function setView(){
+ const v=app.view,{width,height}=p();
+ const w=width*v.scale,h=height*v.scale;
+ const paper=$('paper');paper.style.width=w+'px';paper.style.height=h+'px';
+ paper.style.transform=`translate(${v.x}px, ${v.y}px)`;
+ $('canvas').style.width=w+'px';$('canvas').style.height=h+'px';
+ const gap=v.scale*v.gridStep;
+ $('grid').style.display=v.gridOn&&gap>=6?'block':'none';
+ $('grid').style.backgroundSize=gap+'px '+gap+'px';
+ $('gridToggle').setAttribute('aria-pressed',String(v.gridOn));
+ $('gridStep').value=String(v.gridStep);
+ $('zoomLevel').textContent=(Math.round(v.scale*10)/10).toLocaleString('es-CO')+'×';
+}
+function fit(){
+ const stage=$('stage'),v=app.view,{width,height}=p();
+ const aw=Math.max(1,stage.clientWidth-40),ah=Math.max(1,stage.clientHeight-40);
+ v.scale=clamp(Math.floor(Math.min(aw/width,ah/height)),1,48);
+ v.x=(stage.clientWidth-width*v.scale)/2;
+ v.y=(stage.clientHeight-height*v.scale)/2;
+ v.manual=false;
+ app.lastStage={w:stage.clientWidth,h:stage.clientHeight};
+ setView();
+}
+function zoomAt(clientX,clientY,factor){
+ const stage=$('stage'),r=stage.getBoundingClientRect(),v=app.view;
+ const sx=clientX-r.left,sy=clientY-r.top,old=v.scale;
+ const next=clamp(Math.round(old*factor*100)/100,1,48);
+ if(next===old)return;
+ // Mantener bajo el cursor el mismo píxel del lienzo.
+ v.x=sx-(sx-v.x)*next/old;
+ v.y=sy-(sy-v.y)*next/old;
+ v.scale=next;v.manual=true;setView();
+}
+// Reproducir únicamente cambia el fotograma visible; no duplica ni altera sus píxeles.
+function updatePlaybackControls(){
+ const running=app.playback.running,button=$('playPause');
+ button.textContent=running?'❚❚ Pausar':'▶ Reproducir';
+ button.setAttribute('aria-pressed',String(running));
+ button.disabled=!running&&selected().cels.length<2;
+ button.title=button.disabled?'Añade al menos dos fotogramas':'Reproducir o pausar la animación';
+ $('fps').value=p().fps;
+}
+function showFrame(frame,save=true){
+ p().frame=frame;
+ drawPage();
+ for(const button of $('frames').children)button.classList.toggle('selected',Number(button.dataset.frame)===frame);
+ if(save)persist();
+}
+function stopPlayback(){
+ const playback=app.playback;
+ if(!playback.running)return;
+ playback.running=false;
+ cancelAnimationFrame(playback.raf);
+ playback.raf=0;
+ updatePlaybackControls();
+ persist();
+}
+function playbackTick(now){
+ const playback=app.playback;
+ if(!playback.running)return;
+ const count=selected().cels.length;
+ if(count<2){stopPlayback();return;}
+ const steps=Math.floor((now-playback.anchor)*p().fps/1000);
+ const index=(playback.base+steps)%count;
+ if(index!==p().frame)showFrame(index,false);
+ playback.raf=requestAnimationFrame(playbackTick);
+}
+function startPlayback(){
+ if(app.playback.running||selected().cels.length<2)return;
+ const playback=app.playback;
+ playback.running=true;
+ playback.anchor=performance.now();
+ playback.base=p().frame;
+ updatePlaybackControls();
+ playback.raf=requestAnimationFrame(playbackTick);
+}
+// Un color por celda del fotograma compuesto, en el mismo orden visual que el lienzo.
+// Las capas ocultas se omiten y los píxeles transparentes se indican literalmente.
+function frameColors(frame){
+ const {width,height,layers}=p(),colors=Array(width*height).fill('transparente');
+ for(const layer of layers){
+  if(!layer.visible)continue;
+  for(let i=0;i<colors.length;i++){
+   const color=layer.cels[frame][i];
+   if(color!==null)colors[i]=color.toUpperCase();
+  }
+ }
+ return colors;
+}
+function makePixelText(frame){
+ const {width,height}=p(),colors=frameColors(frame);
+ const lines=[`Fotograma ${frame+1} — ${width} × ${height} píxeles`,
+  'Coordenadas: (1,1) = esquina superior izquierda',
+  'x,y,color'];
+ for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+  lines.push(`${x+1},${y+1},${colors[y*width+x]}`);
+ }
+ return lines.join('\n');
+}
+function textStatus(message='',kind=''){
+ const box=$('pixelTextStatus');box.textContent=message;box.className=kind;
+}
+function openPixelText(frame){
+ stopPlayback();showFrame(frame);
+ textFrame=frame;
+ $('pixelDialogTitle').textContent='Texto del fotograma '+(frame+1);
+ $('pixelText').value=makePixelText(frame);
+ $('copyPixelText').textContent='Copiar texto';
+ textStatus();
+ const dialog=$('pixelDialog');if(!dialog.open)dialog.showModal();
+}
+// Validar todo el texto antes de modificar un solo píxel.
+// Se aceptan las cabeceras generadas, líneas vacías y entradas x,y,color.
+// La lista puede estar incompleta: solo se cambian las coordenadas indicadas.
+function parsePixelText(input){
+ const {width,height}=p(),updates=new Map(),lines=input.split(/\r?\n/);
+ for(let i=0;i<lines.length;i++){
+  const raw=lines[i].trim();
+  if(!raw || /^Fotograma \d+ — \d+ × \d+ píxeles$/.test(raw) ||
+     /^Coordenadas: \(1,1\) = esquina superior izquierda$/.test(raw) ||
+     /^x\s*,\s*y\s*,\s*color$/i.test(raw))continue;
+  const fields=raw.split(',').map(part=>part.trim());
+  if(fields.length!==3)throw Error(`Línea ${i+1}: usa el formato x,y,color.`);
+  const [xs,ys,cs]=fields;
+  if(!/^\d+$/.test(xs)||!/^\d+$/.test(ys))throw Error(`Línea ${i+1}: las coordenadas deben ser números enteros.`);
+  const x=Number(xs),y=Number(ys);
+  if(x<1||x>width||y<1||y>height)throw Error(`Línea ${i+1}: (${x},${y}) está fuera de la hoja ${width} × ${height}.`);
+  if(!/^#[0-9a-f]{6}$/i.test(cs)&&!/^transparente$/i.test(cs))throw Error(`Línea ${i+1}: color inválido; usa #RRGGBB o transparente.`);
+  const index=(y-1)*width+(x-1);
+  if(updates.has(index))throw Error(`Línea ${i+1}: la coordenada (${x},${y}) aparece repetida.`);
+  updates.set(index,/^transparente$/i.test(cs)?'transparente':cs.toUpperCase());
+ }
+ if(!updates.size)throw Error('Escribe al menos una línea x,y,color.');
+ return updates;
+}
+function applyPixelText(){
+ if(textFrame===null)return;
+ let updates;
+ try{updates=parsePixelText($('pixelText').value);}
+ catch(e){textStatus(e.message,'error');return;}
+ const {layers}=p(),visible=layers.filter(l=>l.visible);
+ if(!visible.length){textStatus('Debes mostrar al menos una capa para editar los píxeles visibles.','error');return;}
+ const current=frameColors(textFrame),top=visible.at(-1);
+ let changes=0;
+ for(const [index,color] of updates){
+  if(current[index]===color)continue;
+  if(color==='transparente'){
+   // Para mostrar transparencia real, quitar este píxel de todas las capas visibles.
+   for(const layer of visible)layer.cels[textFrame][index]=null;
+  }else{
+   // Pintar sobre la capa visible superior para que el color final sea exactamente el indicado.
+   top.cels[textFrame][index]=color;
+  }
+  changes++;
+ }
+ if(changes){render();persist();}
+ // Regenerar el texto para mostrar el resultado real y normalizar el formato.
+ $('pixelText').value=makePixelText(textFrame);
+ textStatus(changes===0?'Sin cambios: los colores ya coinciden.':`Aplicados ${changes} píxeles al fotograma ${textFrame+1}.`,'success');
+}
+function renderFrames(){const area=$('frames');area.replaceChildren();for(let f=0;f<selected().cels.length;f++){
+ const frame=document.createElement('div');frame.className='frame'+(f===p().frame?' selected':'');frame.dataset.frame=f;
+ const button=document.createElement('button');button.type='button';button.className='frame-select';button.setAttribute('aria-label','Seleccionar fotograma '+(f+1));
+ const thumbnail=document.createElement('canvas');thumbnail.width=p().width;thumbnail.height=p().height;thumbnail.className='thumb';drawComposite(thumbnail.getContext('2d'),f);
+ const num=document.createElement('span');num.textContent='Imagen '+(f+1);button.append(thumbnail,num);button.addEventListener('click',()=>{stopPlayback();showFrame(f);});
+ const textButton=document.createElement('button');textButton.type='button';textButton.className='frame-text';textButton.textContent='Editar texto';textButton.setAttribute('aria-label','Editar colores del fotograma '+(f+1));textButton.addEventListener('click',()=>openPixelText(f));
+ frame.append(button,textButton);area.append(frame);
+}}
+function renderLayers(){const area=$('layers');area.replaceChildren();for(const l of [...p().layers].reverse()){
+ const div=document.createElement('div');div.className='layer'+(l.id===p().selected?' selected':'');
+ const eye=document.createElement('button');eye.type='button';eye.className='eye'+(l.visible?'':' off');eye.title=l.visible?'Ocultar capa':'Mostrar capa';eye.setAttribute('aria-label',eye.title);eye.textContent=l.visible?'◉':'○';eye.addEventListener('click',()=>{l.visible=!l.visible;render();persist();});
+ const button=document.createElement('button');button.type='button';button.className='layer-name';button.textContent=l.name;button.title='Seleccionar capa · doble clic para renombrar';button.addEventListener('click',()=>{p().selected=l.id;renderLayers();persist();});
+ button.addEventListener('dblclick',()=>{const answer=prompt('Nombre de la capa:',l.name);if(answer&&answer.trim()){l.name=answer.trim().slice(0,60);renderLayers();persist();}});
+ div.append(eye,button);area.append(div);
+}}
+function render(){ $('width').value=p().width;$('height').value=p().height;$('resolution').textContent=p().width+' × '+p().height+' px';drawPage();setView();renderFrames();renderLayers();updatePlaybackControls();}
+function tool(name){app.tool=name;for(const key of ['pencil','eraser']){$(key).classList.toggle('active',key===name);$(key).setAttribute('aria-pressed',String(key===name));}}
+function pos(e){const r=$('canvas').getBoundingClientRect();return{x:Math.floor((e.clientX-r.left)*p().width/r.width),y:Math.floor((e.clientY-r.top)*p().height/r.height)};}
+function put(x,y){if(x<0||y<0||x>=p().width||y>=p().height)return;selected().cels[p().frame][y*p().width+x]=app.tool==='eraser'?null:app.color;}
+function line(a,b){let x=a.x,y=a.y;const dx=Math.abs(b.x-x),dy=Math.abs(b.y-y),sx=x<b.x?1:-1,sy=y<b.y?1:-1;let err=dx-dy;while(true){put(x,y);if(x===b.x&&y===b.y)break;const e2=2*err;if(e2>-dy){err-=dy;x+=sx;}if(e2<dx){err+=dx;y+=sy;}}}
+$('canvas').addEventListener('pointerdown',e=>{if(e.button!==0||app.spaceHeld)return;stopPlayback();if(!selected().visible){selected().visible=true;renderLayers();}app.drawing=true;app.point=pos(e);$('canvas').setPointerCapture(e.pointerId);put(app.point.x,app.point.y);drawPage();e.preventDefault();});
+$('canvas').addEventListener('pointermove',e=>{if(!app.drawing)return;const point=pos(e);const bounded={x:Math.max(0,Math.min(p().width-1,point.x)),y:Math.max(0,Math.min(p().height-1,point.y))};line(app.point,bounded);app.point=bounded;drawPage();});
+function done(){if(!app.drawing)return;app.drawing=false;app.point=null;renderFrames();persist();}
+$('canvas').addEventListener('pointerup',done);$('canvas').addEventListener('pointercancel',done);$('canvas').addEventListener('lostpointercapture',done);
+$('pencil').addEventListener('click',()=>tool('pencil'));
+$('eraser').addEventListener('click',()=>tool('eraser'));
+$('color').addEventListener('input',e=>{app.color=e.target.value;tool('pencil');});
+$('addFrame').addEventListener('click',()=>{stopPlayback();if(selected().cels.length>=72)return;const index=p().frame+1;for(const l of p().layers)l.cels.splice(index,0,[...l.cels[p().frame]]);p().frame=index;render();persist();});
+$('addLayer').addEventListener('click',()=>{stopPlayback();if(p().layers.length>=24)return;const id=++serial;const layer={id,name:'Capa '+id,visible:true,cels:Array.from({length:selected().cels.length},()=>Array(p().width*p().height).fill(null))};p().layers.push(layer);p().selected=id;render();persist();});
+$('applySize').addEventListener('click',()=>{
+ stopPlayback();
+ const w=Number($('width').value),h=Number($('height').value);if(!Number.isInteger(w)||!Number.isInteger(h)||w<8||w>128||h<8||h>128){alert('Usa un ancho y un alto entre 8 y 128 píxeles.');return;}
+ if(w===p().width&&h===p().height)return;
+ const ow=p().width,oh=p().height,ox=Math.floor((w-ow)/2),oy=Math.floor((h-oh)/2);
+ for(const layer of p().layers)layer.cels=layer.cels.map(old=>{const cel=Array(w*h).fill(null);for(let y=0;y<oh;y++){const ny=y+oy;if(ny<0||ny>=h)continue;for(let x=0;x<ow;x++){const nx=x+ox;if(nx>=0&&nx<w)cel[ny*w+nx]=old[y*ow+x];}}return cel;});
+ p().width=w;p().height=h;fit();render();persist();
+});
+$('closePixelText').addEventListener('click',()=>$('pixelDialog').close());
+$('dismissPixelText').addEventListener('click',()=>$('pixelDialog').close());
+$('applyPixelText').addEventListener('click',applyPixelText);
+$('pixelText').addEventListener('input',()=>textStatus());
+$('copyPixelText').addEventListener('click',async()=>{
+ const field=$('pixelText');field.focus();field.select();
+ try{
+  if(navigator.clipboard&&window.isSecureContext)await navigator.clipboard.writeText(field.value);
+  else if(!document.execCommand('copy'))throw Error('No se pudo copiar');
+  $('copyPixelText').textContent='Copiado';
+ }catch{$('copyPixelText').textContent='Selecciona y copia con Ctrl+C';}
+});
+$('playPause').addEventListener('click',()=>app.playback.running?stopPlayback():startPlayback());
+$('fps').addEventListener('change',e=>{
+ const value=Number(e.target.value);
+ p().fps=Number.isFinite(value)&&value>0?clamp(Math.round(value),1,60):12;
+ if(app.playback.running){app.playback.base=p().frame;app.playback.anchor=performance.now();}
+ updatePlaybackControls();persist();
+});
+// Detener el avance cuando la pestaña deja de estar visible.
+document.addEventListener('visibilitychange',()=>{if(document.hidden)stopPlayback();});
+// Navegación del lienzo: rueda para zoom, espacio o botón central para desplazar.
+$('stage').addEventListener('wheel',e=>{
+ e.preventDefault();
+ zoomAt(e.clientX,e.clientY,e.deltaY<0?1.2:1/1.2);
+},{passive:false});
+$('stage').addEventListener('pointerdown',e=>{
+ if(e.button!==1&&!(e.button===0&&app.spaceHeld))return;
+ e.preventDefault();app.panning=true;app.panPoint={x:e.clientX,y:e.clientY};
+ $('stage').setPointerCapture(e.pointerId);$('stage').style.cursor='grabbing';
+});
+$('stage').addEventListener('pointermove',e=>{
+ if(!app.panning||!app.panPoint)return;
+ app.view.x+=e.clientX-app.panPoint.x;
+ app.view.y+=e.clientY-app.panPoint.y;
+ app.panPoint={x:e.clientX,y:e.clientY};
+ app.view.manual=true;setView();
+});
+function finishPan(){app.panning=false;app.panPoint=null;$('stage').style.cursor=app.spaceHeld?'grab':'default';}
+for(const ev of ['pointerup','pointercancel','lostpointercapture'])$('stage').addEventListener(ev,finishPan);
+$('stage').addEventListener('auxclick',e=>{if(e.button===1)e.preventDefault();});
+function isEditingField(element){return element&&element.closest('input,textarea,select,[contenteditable="true"]');}
+window.addEventListener('keydown',e=>{
+ if(e.code==='Space'&&!isEditingField(e.target)){
+  e.preventDefault();app.spaceHeld=true;
+  if(!app.panning)$('stage').style.cursor='grab';
+ }
+});
+window.addEventListener('keyup',e=>{
+ if(e.code==='Space'){app.spaceHeld=false;if(!app.panning)$('stage').style.cursor='default';}
+});
+window.addEventListener('blur',()=>{app.spaceHeld=false;finishPan();});
+$('gridToggle').addEventListener('click',()=>{app.view.gridOn=!app.view.gridOn;setView();});
+$('gridStep').addEventListener('change',e=>{app.view.gridStep=Number(e.target.value);setView();});
+$('fitView').addEventListener('click',fit);
+const observeStage=()=>{
+ const stage=$('stage');
+ if(!app.lastStage){fit();return;}
+ if(!app.view.manual){fit();return;}
+ app.view.x+=(stage.clientWidth-app.lastStage.w)/2;
+ app.view.y+=(stage.clientHeight-app.lastStage.h)/2;
+ app.lastStage={w:stage.clientWidth,h:stage.clientHeight};setView();
+};
+if(typeof ResizeObserver!=='undefined')new ResizeObserver(observeStage).observe($('stage'));
+else window.addEventListener('resize',observeStage);
+render();fit();
+})();
+</script>
+</body>
+</html>
