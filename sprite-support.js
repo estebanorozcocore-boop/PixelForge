@@ -84,6 +84,7 @@
    layers:[{id:1,name:'Orbe mágico · 8 poses',visible:true,cels}]};
  }
  window.pfPackProject=pack;window.pfUnpackProject=unpack;
+ window.pfProjectFromSheet=fromSheet;
  document.getElementById('importSheet')?.addEventListener('click',()=>document.getElementById('sheetFile').click());
  document.getElementById('sheetFile')?.addEventListener('change',async event=>{
   const input=event.currentTarget,file=input.files?.[0],status=document.getElementById('importStatus');
