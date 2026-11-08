@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PixelForge — Editor mínimo 1.5</title>
+<title>PixelForge — Editor mínimo 1.6</title>
 <style>
 :root{color-scheme:dark;--bg:#0d1220;--panel:#151d2c;--panel2:#1b2638;--stroke:#344157;--text:#f1f5fb;--muted:#a1adc2;--accent:#9b92ff}
 *{box-sizing:border-box}
@@ -24,6 +24,7 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)
 .tool svg{width:18px;height:18px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
 .tool.active{background:#302d5a;color:#fff;border-color:var(--accent)}
 .color-control{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:12px;margin-top:13px}
+#injectColors{width:100%;margin-top:12px;background:#3c3479;border-color:#796cf0;font-weight:650}
 input[type=color]{padding:2px;width:40px;height:35px;border:1px solid var(--stroke);border-radius:7px;background:var(--panel2);cursor:pointer}
 .sep{height:1px;background:var(--stroke);margin:24px 0}
 .size-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
@@ -74,12 +75,12 @@ input[type=color]{padding:2px;width:40px;height:35px;border:1px solid var(--stro
 .pixel-dialog-head strong{font-size:15px}
 .pixel-dialog-body{padding:14px 17px;display:flex;flex-direction:column;gap:10px}
 .pixel-dialog-body p{margin:0;color:var(--muted);font-size:12px}
-#pixelText{display:block;resize:vertical;min-height:220px;height:min(58dvh,500px);width:100%;padding:12px;background:#0d1625;color:#e8f0ff;border:1px solid var(--stroke);border-radius:8px;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre;tab-size:2}
-#pixelTextStatus{min-height:18px;font-size:12px;color:var(--muted);white-space:pre-wrap}
-#pixelTextStatus.error{color:#ff9b9b}
-#pixelTextStatus.success{color:#9de4b9}
+#pixelText,#injectText{display:block;resize:vertical;min-height:220px;height:min(58dvh,500px);width:100%;padding:12px;background:#0d1625;color:#e8f0ff;border:1px solid var(--stroke);border-radius:8px;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre;tab-size:2}
+#pixelTextStatus,#injectStatus{min-height:18px;font-size:12px;color:var(--muted);white-space:pre-wrap}
+#pixelTextStatus.error,#injectStatus.error{color:#ff9b9b}
+#pixelTextStatus.success,#injectStatus.success{color:#9de4b9}
 .pixel-dialog-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
-#applyPixelText{background:#3c3479;border-color:#796cf0;font-weight:650}
+#applyPixelText,#applyInjection{background:#3c3479;border-color:#796cf0;font-weight:650}
 @media (max-width:850px){.layout{grid-template-columns:148px minmax(0,1fr) 166px}.left,.right{padding:15px 9px}.canvas-stage{padding:10px}.viewer-top{padding:11px}}
 </style>
 </head>
@@ -93,6 +94,7 @@ input[type=color]{padding:2px;width:40px;height:35px;border:1px solid var(--stro
       <button type="button" id="eraser" class="tool" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M20 14l-7 7H6l-4-4L14 5a2 2 0 0 1 3 0l5 5a2 2 0 0 1 0 3zM8 11l7 7M13 21h9"/></svg>Borrador</button>
     </div>
     <label class="color-control"><input type="color" id="color" value="#865df5"> Color del pincel</label>
+    <button type="button" id="injectColors">Inyectar colores</button>
     <div class="sep"></div>
     <h2>Tamaño de la hoja</h2>
     <div class="size-grid"><label>Ancho (px)<input id="width" type="number" min="8" max="128" step="1" value="32"></label><label>Alto (px)<input id="height" type="number" min="8" max="128" step="1" value="32"></label></div>
@@ -134,6 +136,16 @@ input[type=color]{padding:2px;width:40px;height:35px;border:1px solid var(--stro
     <div class="pixel-dialog-actions"><button type="button" id="copyPixelText">Copiar texto</button><button type="button" id="dismissPixelText">Cerrar</button><button type="button" id="applyPixelText">Aplicar cambios</button></div>
   </div>
 </dialog>
+<dialog id="injectDialog" class="pixel-dialog" aria-labelledby="injectTitle">
+  <div class="pixel-dialog-head"><strong id="injectTitle">Inyectar colores</strong><button type="button" id="closeInjection" aria-label="Cerrar inyección">✕</button></div>
+  <div class="pixel-dialog-body">
+    <p>Pega una lista de píxeles para la capa y el fotograma seleccionados. Los demás píxeles no se modifican. Coordenadas desde (1,1). Acepta líneas <code>x,y,color</code> o JSON con objetos {x, y, color}.</p>
+    <div id="injectTarget" class="small" aria-live="polite"></div>
+    <textarea id="injectText" spellcheck="false" aria-label="Inyectar píxeles mediante CSV o JSON" placeholder="x,y,color&#10;1,1,#FF0000&#10;2,1,#00FF00&#10;3,1,transparente"></textarea>
+    <div id="injectStatus" role="status" aria-live="polite"></div>
+    <div class="pixel-dialog-actions"><button type="button" id="dismissInjection">Cerrar</button><button type="button" id="applyInjection">Aplicar colores</button></div>
+  </div>
+</dialog>
 <script>
 (()=>{
 'use strict';
@@ -142,6 +154,7 @@ const STORAGE='pixelforge-minimal-v1';
 let serial=1;
 const fresh=(w=32,h=32)=>({width:w,height:h,fps:12,frame:0,selected:1,layers:[{id:1,name:'Capa 1',visible:true,cels:[Array(w*h).fill(null)]}]});
 let textFrame=null;
+let injectionTarget=null;
 const app={p:fresh(),tool:'pencil',color:'#865df5',drawing:false,point:null,
  view:{scale:12,x:0,y:0,manual:false,gridOn:true,gridStep:1},panning:false,panPoint:null,spaceHeld:false,lastStage:null,
  playback:{running:false,raf:0,anchor:0,base:0}};
@@ -324,6 +337,61 @@ function applyPixelText(){
  $('pixelText').value=makePixelText(textFrame);
  textStatus(changes===0?'Sin cambios: los colores ya coinciden.':`Aplicados ${changes} píxeles al fotograma ${textFrame+1}.`,'success');
 }
+
+function injectionStatus(message='',kind=''){
+ const box=$('injectStatus');box.textContent=message;box.className=kind;
+}
+function openInjection(){
+ stopPlayback();
+ injectionTarget={frame:p().frame,layerId:p().selected};
+ const layer=selected();
+ $('injectTarget').textContent=`Destino: fotograma ${p().frame+1} · ${layer.name} · hoja ${p().width} × ${p().height} px`;
+ $('injectText').value='';
+ injectionStatus();
+ $('injectDialog').showModal();
+ $('injectText').focus();
+}
+function parseInjection(input){
+ const source=input.trim();
+ if(!source)throw Error('Pega al menos una coordenada con su color.');
+ if(source.length>1000000)throw Error('El texto supera el límite de 1 MB.');
+ // Se utiliza el mismo validador de colores y posiciones del editor de texto.
+ if(source.startsWith('[')||source.startsWith('{')){
+  let data;
+  try{data=JSON.parse(source);}catch{throw Error('JSON inválido. Revisa comas y comillas.');}
+  const points=Array.isArray(data)?data:data&&data.pixels;
+  if(!Array.isArray(points)||!points.length)throw Error('El JSON debe ser una lista de {x, y, color} o un objeto con la propiedad "pixels".');
+  if(points.length>p().width*p().height)throw Error('Hay más entradas que píxeles en la hoja.');
+  const lines=points.map((item,i)=>{
+   if(!item||typeof item!=='object'||Array.isArray(item))
+    throw Error(`Entrada JSON ${i+1}: se requiere un objeto {x, y, color}.`);
+   return [item.x,item.y,item.color].join(',');
+  });
+  return parsePixelText(lines.join('\n'));
+ }
+ return parsePixelText(source);
+}
+function applyInjection(){
+ if(!injectionTarget)return;
+ let updates;
+ try{updates=parseInjection($('injectText').value);}
+ catch(e){injectionStatus(e.message,'error');return;}
+ const layer=p().layers.find(l=>l.id===injectionTarget.layerId);
+ if(!layer){injectionStatus('La capa de destino ya no existe.','error');return;}
+ const cel=layer.cels[injectionTarget.frame];
+ if(!cel){injectionStatus('El fotograma de destino ya no existe.','error');return;}
+ let changes=0;
+ for(const [index,color] of updates){
+  const next=color==='transparente'?null:color;
+  if(cel[index]!==next){cel[index]=next;changes++;}
+ }
+ if(changes){render();persist();}
+ injectionStatus(
+  changes===0?'Sin cambios. Los colores ya coinciden.':
+  `${changes} píxeles actualizados en ${layer.name}, fotograma ${injectionTarget.frame+1}.`+(layer.visible?'':' La capa está oculta; actívala para ver los cambios.'),
+  'success'
+ );
+}
 function renderFrames(){const area=$('frames');area.replaceChildren();for(let f=0;f<selected().cels.length;f++){
  const frame=document.createElement('div');frame.className='frame'+(f===p().frame?' selected':'');frame.dataset.frame=f;
  const button=document.createElement('button');button.type='button';button.className='frame-select';button.setAttribute('aria-label','Seleccionar fotograma '+(f+1));
@@ -361,6 +429,12 @@ $('applySize').addEventListener('click',()=>{
  for(const layer of p().layers)layer.cels=layer.cels.map(old=>{const cel=Array(w*h).fill(null);for(let y=0;y<oh;y++){const ny=y+oy;if(ny<0||ny>=h)continue;for(let x=0;x<ow;x++){const nx=x+ox;if(nx>=0&&nx<w)cel[ny*w+nx]=old[y*ow+x];}}return cel;});
  p().width=w;p().height=h;fit();render();persist();
 });
+$('injectColors').addEventListener('click',openInjection);
+$('closeInjection').addEventListener('click',()=>$('injectDialog').close());
+$('dismissInjection').addEventListener('click',()=>$('injectDialog').close());
+$('applyInjection').addEventListener('click',applyInjection);
+$('injectText').addEventListener('input',()=>injectionStatus());
+$('injectDialog').addEventListener('close',()=>{injectionTarget=null;});
 $('closePixelText').addEventListener('click',()=>$('pixelDialog').close());
 $('dismissPixelText').addEventListener('click',()=>$('pixelDialog').close());
 $('applyPixelText').addEventListener('click',applyPixelText);
