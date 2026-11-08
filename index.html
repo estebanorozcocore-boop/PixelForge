@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PixelForge — Editor 1.8</title>
+<title>PixelForge — Editor 1.9</title>
 <style>
 :root{color-scheme:dark;--bg:#0d1220;--panel:#151d2c;--panel2:#1b2638;--stroke:#344157;--text:#f1f5fb;--muted:#a1adc2;--accent:#9b92ff}
 *{box-sizing:border-box}
@@ -100,6 +100,7 @@ input[type=color]{padding:2px;width:40px;height:35px;border:1px solid var(--stro
 <select id="projectPicker" aria-label="Seleccionar escena">
 <option value="default">Mi dibujo</option>
 <option value="explosion">Explosión roja · 24 FPS</option>
+<option value="orb">Orbe mágico · 8 poses</option>
 </select></label></header>
 <div class="layout">
   <aside class="left">
@@ -112,9 +113,16 @@ input[type=color]{padding:2px;width:40px;height:35px;border:1px solid var(--stro
     <button type="button" id="injectColors">Inyectar colores</button>
     <div class="sep"></div>
     <h2>Tamaño de la hoja</h2>
-    <div class="size-grid"><label>Ancho (px)<input id="width" type="number" min="8" max="128" step="1" value="32"></label><label>Alto (px)<input id="height" type="number" min="8" max="128" step="1" value="32"></label></div>
+    <div class="size-grid"><label>Ancho (px)<input id="width" type="number" min="8" max="512" step="1" value="32"></label><label>Alto (px)<input id="height" type="number" min="8" max="512" step="1" value="32"></label></div>
     <button id="applySize" type="button">Aplicar tamaño</button>
-    <div class="small">De 8 a 128 píxeles por lado. El dibujo se conserva centrado al cambiar la hoja.</div>
+    <div class="small">De 8 a 512 px por lado. Para animación con detalles: 256 × 256.</div>
+    <div class="sep"></div>
+    <h2>Importar animación</h2>
+    <button type="button" id="importSheet" style="width:100%">Importar hoja 4 × 2</button>
+    <input id="sheetFile" type="file" accept="image/png,image/webp,image/jpeg" hidden>
+    <div class="small">Convierte una hoja de 8 poses en 8 fotogramas editables a 256 × 256, en una escena separada.</div>
+    <div id="importStatus" class="small" role="status" aria-live="polite"></div>
+    <div id="storageStatus" class="small" role="status" aria-live="polite"></div>
   </aside>
   <main class="editor">
     <section class="viewer" aria-label="Hoja de píxeles">
@@ -167,12 +175,16 @@ input[type=color]{padding:2px;width:40px;height:35px;border:1px solid var(--stro
   </div>
 </dialog>
 <script src="./explosion-scene.js"></script>
+<script src="./sprite-support.js"></script>
 <script>
 (()=>{
 'use strict';
 const $=id=>document.getElementById(id);
-const MODE=new URLSearchParams(window.location.search).get('scene')==='explosion'?'explosion':'default';
-const STORAGE=MODE==='explosion'?'pixelforge-explosion-scene-v1':'pixelforge-minimal-v1';
+const rawMode=new URLSearchParams(window.location.search).get('scene');
+const MODE=rawMode==='explosion'?'explosion':rawMode==='orb'?'orb':'default';
+const STORAGE=MODE==='explosion'?'pixelforge-explosion-scene-v1':MODE==='orb'?'pixelforge-orb-scene-v1':'pixelforge-minimal-v1';
+const MAX_CELLS=4194304,MAX_DIM=512;
+function totalCells(){return p().width*p().height*p().layers.length*selected().cels.length;}
 const CHAT_SEEN_KEY='pixelforge-chat-applied-v1';
 let serial=1;
 const fresh=(w=32,h=32)=>({width:w,height:h,fps:12,frame:0,selected:1,layers:[{id:1,name:'Capa 1',visible:true,cels:[Array(w*h).fill(null)]}]});
@@ -182,24 +194,40 @@ const app={p:fresh(),tool:'pencil',color:'#865df5',drawing:false,point:null,
  view:{scale:12,x:0,y:0,manual:false,gridOn:true,gridStep:1},panning:false,panPoint:null,spaceHeld:false,lastStage:null,
  playback:{running:false,raf:0,anchor:0,base:0}};
 function validate(saved){
- if(!saved||!Number.isInteger(saved.width)||!Number.isInteger(saved.height)||saved.width<8||saved.width>128||saved.height<8||saved.height>128||!Array.isArray(saved.layers)||!saved.layers.length||saved.layers.length>24)return null;
+ if(!saved||!Number.isInteger(saved.width)||!Number.isInteger(saved.height)||saved.width<8||saved.width>MAX_DIM||saved.height<8||saved.height>MAX_DIM||!Array.isArray(saved.layers)||!saved.layers.length||saved.layers.length>24)return null;
  let n=-1;
  for(const l of saved.layers){if(!Number.isInteger(l.id)||!Array.isArray(l.cels)||!l.cels.length||l.cels.length>72||l.cels.some(c=>!Array.isArray(c)||c.length!==saved.width*saved.height))return null;n=Math.max(n,l.id);}
  const count=saved.layers[0].cels.length;
- if(saved.layers.some(l=>l.cels.length!==count))return null;
+ if(saved.layers.some(l=>l.cels.length!==count)||saved.width*saved.height*saved.layers.length*count>MAX_CELLS)return null;
  saved.fps=Number.isFinite(saved.fps)?Math.max(1,Math.min(60,Math.round(saved.fps))):12;
  saved.frame=Math.max(0,Math.min(count-1,saved.frame|0));
  if(!saved.layers.some(l=>l.id===saved.selected))saved.selected=saved.layers.at(-1).id;
  serial=n;
  return saved;
 }
-function initialProject(){return MODE==='explosion'?createExplosionScene():fresh();}
-try{const saved=JSON.parse(localStorage.getItem(STORAGE));app.p=validate(saved)||initialProject();}catch{app.p=initialProject();}
+function initialProject(){return MODE==='explosion'?createExplosionScene():MODE==='orb'?fresh(256,256):fresh();}
+try{const raw=JSON.parse(localStorage.getItem(STORAGE));app.p=validate(window.pfUnpackProject(raw))||initialProject();}catch{app.p=initialProject();}
 serial=Math.max(serial,...app.p.layers.map(layer=>layer.id));
 const p=()=>app.p;
 const selected=()=>p().layers.find(l=>l.id===p().selected);
-function persist(){try{localStorage.setItem(STORAGE,JSON.stringify(p()));}catch{/* almacenamiento local no disponible */}}
-function drawComposite(ctx,frame){const {width,height,layers}=p();ctx.clearRect(0,0,width,height);for(const l of layers){if(!l.visible)continue;const cel=l.cels[frame];let last='';for(let i=0;i<cel.length;i++){const value=cel[i];if(value===null)continue;if(value!==last){ctx.fillStyle=value;last=value;}ctx.fillRect(i%width,Math.floor(i/width),1,1);}}}
+function persist(){
+ try{localStorage.setItem(STORAGE,JSON.stringify(window.pfPackProject(p())));$('storageStatus').textContent='';}
+ catch(error){$('storageStatus').textContent='No se pudo guardar el dibujo: '+error.message;}
+}
+function drawComposite(ctx,frame){
+ const {width,height,layers}=p(),out=ctx.createImageData(width,height),data=out.data,colors=new Map();
+ for(const l of layers){
+  if(!l.visible)continue;
+  const cel=l.cels[frame];
+  for(let i=0;i<cel.length;i++){
+   const value=cel[i];if(value===null)continue;
+   let rgb=colors.get(value);
+   if(!rgb){rgb=[parseInt(value.slice(1,3),16),parseInt(value.slice(3,5),16),parseInt(value.slice(5,7),16)];colors.set(value,rgb);}
+   const k=i*4;data[k]=rgb[0];data[k+1]=rgb[1];data[k+2]=rgb[2];data[k+3]=255;
+  }
+ }
+ ctx.putImageData(out,0,0);
+}
 function drawPage(){const c=$('canvas');if(c.width!==p().width||c.height!==p().height){c.width=p().width;c.height=p().height;}drawComposite(c.getContext('2d'),p().frame);}
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 function setView(){
@@ -218,7 +246,7 @@ function setView(){
 function fit(){
  const stage=$('stage'),v=app.view,{width,height}=p();
  const aw=Math.max(1,stage.clientWidth-40),ah=Math.max(1,stage.clientHeight-40);
- v.scale=clamp(Math.floor(Math.min(aw/width,ah/height)),1,48);
+ v.scale=clamp(Math.min(aw/width,ah/height),0.15,48);
  v.x=(stage.clientWidth-width*v.scale)/2;
  v.y=(stage.clientHeight-height*v.scale)/2;
  v.manual=false;
@@ -228,7 +256,7 @@ function fit(){
 function zoomAt(clientX,clientY,factor){
  const stage=$('stage'),r=stage.getBoundingClientRect(),v=app.view;
  const sx=clientX-r.left,sy=clientY-r.top,old=v.scale;
- const next=clamp(Math.round(old*factor*100)/100,1,48);
+ const next=clamp(Math.round(old*factor*100)/100,0.15,48);
  if(next===old)return;
  // Mantener bajo el cursor el mismo píxel del lienzo.
  v.x=sx-(sx-v.x)*next/old;
@@ -551,11 +579,12 @@ $('canvas').addEventListener('pointerup',done);$('canvas').addEventListener('poi
 $('pencil').addEventListener('click',()=>tool('pencil'));
 $('eraser').addEventListener('click',()=>tool('eraser'));
 $('color').addEventListener('input',e=>{app.color=e.target.value;tool('pencil');});
-$('addFrame').addEventListener('click',()=>{stopPlayback();if(selected().cels.length>=72)return;const index=p().frame+1;for(const l of p().layers)l.cels.splice(index,0,[...l.cels[p().frame]]);p().frame=index;render();persist();});
-$('addLayer').addEventListener('click',()=>{stopPlayback();if(p().layers.length>=24)return;const id=++serial;const layer={id,name:'Capa '+id,visible:true,cels:Array.from({length:selected().cels.length},()=>Array(p().width*p().height).fill(null))};p().layers.push(layer);p().selected=id;render();persist();});
+$('addFrame').addEventListener('click',()=>{stopPlayback();if(selected().cels.length>=72||totalCells()+p().width*p().height*p().layers.length>MAX_CELLS){alert('Límite de memoria para fotogramas.');return;}const index=p().frame+1;for(const l of p().layers)l.cels.splice(index,0,[...l.cels[p().frame]]);p().frame=index;render();persist();});
+$('addLayer').addEventListener('click',()=>{stopPlayback();if(p().layers.length>=24||totalCells()+p().width*p().height*selected().cels.length>MAX_CELLS){alert('Límite de memoria para capas.');return;}const id=++serial;const layer={id,name:'Capa '+id,visible:true,cels:Array.from({length:selected().cels.length},()=>Array(p().width*p().height).fill(null))};p().layers.push(layer);p().selected=id;render();persist();});
 $('applySize').addEventListener('click',()=>{
  stopPlayback();
- const w=Number($('width').value),h=Number($('height').value);if(!Number.isInteger(w)||!Number.isInteger(h)||w<8||w>128||h<8||h>128){alert('Usa un ancho y un alto entre 8 y 128 píxeles.');return;}
+ const w=Number($('width').value),h=Number($('height').value);if(!Number.isInteger(w)||!Number.isInteger(h)||w<8||w>MAX_DIM||h<8||h>MAX_DIM){alert('Usa un ancho y un alto entre 8 y 512 píxeles.');return;}
+ if(w*h*p().layers.length*selected().cels.length>MAX_CELLS){alert('La hoja supera el límite de memoria del proyecto.');return;}
  if(w===p().width&&h===p().height)return;
  const ow=p().width,oh=p().height,ox=Math.floor((w-ow)/2),oy=Math.floor((h-oh)/2);
  for(const layer of p().layers)layer.cels=layer.cels.map(old=>{const cel=Array(w*h).fill(null);for(let y=0;y<oh;y++){const ny=y+oy;if(ny<0||ny>=h)continue;for(let x=0;x<ow;x++){const nx=x+ox;if(nx>=0&&nx<w)cel[ny*w+nx]=old[y*ow+x];}}return cel;});
@@ -636,11 +665,11 @@ $('projectPicker').value=MODE;
 $('projectPicker').addEventListener('change',e=>{
  stopPlayback();persist();
  const target=new URL(location.href);
- if(e.target.value==='explosion')target.searchParams.set('scene','explosion');
+ if(e.target.value==='explosion'||e.target.value==='orb')target.searchParams.set('scene',e.target.value);
  else target.searchParams.delete('scene');
  location.assign(target.toString());
 });
-if(MODE==='explosion'){
+if(MODE==='explosion'||MODE==='orb'){
  const bridge=document.querySelector('.chat-bridge');
  if(bridge)bridge.style.display='none';
 }
