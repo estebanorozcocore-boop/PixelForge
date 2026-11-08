@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PixelForge — Editor 1.9</title>
+<title>PixelForge — Editor 2.0</title>
 <style>
 :root{color-scheme:dark;--bg:#0d1220;--panel:#151d2c;--panel2:#1b2638;--stroke:#344157;--text:#f1f5fb;--muted:#a1adc2;--accent:#9b92ff}
 *{box-sizing:border-box}
@@ -119,6 +119,7 @@ input[type=color]{padding:2px;width:40px;height:35px;border:1px solid var(--stro
     <div class="sep"></div>
     <h2>Importar animación</h2>
     <button type="button" id="importSheet" style="width:100%">Importar hoja 4 × 2</button>
+    <button type="button" id="loadOrbScene" style="width:100%;margin-top:8px" hidden>Cargar las 8 poses del orbe</button>
     <input id="sheetFile" type="file" accept="image/png,image/webp,image/jpeg" hidden>
     <div class="small">Convierte una hoja de 8 poses en 8 fotogramas editables a 256 × 256, en una escena separada.</div>
     <div id="importStatus" class="small" role="status" aria-live="polite"></div>
@@ -661,6 +662,55 @@ const observeStage=()=>{
 };
 if(typeof ResizeObserver!=='undefined')new ResizeObserver(observeStage).observe($('stage'));
 else window.addEventListener('resize',observeStage);
+
+// Carga integrada de las ocho poses. Nunca se pisa un proyecto que contenga píxeles.
+function orbSceneIsEmpty(){
+ if(MODE!=='orb')return false;
+ const state=p();
+ return state.width===256&&state.height===256&&state.layers.length===1&&
+  state.layers[0].cels.length===1&&state.layers[0].cels[0].every(color=>color===null);
+}
+let orbLoading=false;
+function loadOrbScript(){
+ if(typeof ORB_SHEET_DATA!=='undefined')return Promise.resolve();
+ return new Promise((resolve,reject)=>{
+  const script=document.createElement('script');
+  script.src='./orb-sprites.js';
+  script.onload=resolve;
+  script.onerror=()=>reject(Error('No se pudieron descargar las poses del orbe.'));
+  document.head.append(script);
+ });
+}
+async function loadOriginalOrbFrames(manual=false){
+ if(MODE!=='orb'||orbLoading)return;
+ if(manual&&!orbSceneIsEmpty()&&!confirm('Reemplazar los fotogramas de esta escena por las ocho poses originales? Este cambio sobrescribe la escena del orbe guardada en este navegador.'))return;
+ orbLoading=true;
+ const button=$('loadOrbScene'),status=$('importStatus');
+ button.disabled=true;
+ status.textContent='Cargando píxeles en los 8 fotogramas…';
+ try{
+  await loadOrbScript();
+  if(typeof ORB_SHEET_DATA==='undefined')throw Error('La hoja original no está disponible.');
+  const image=new Image();
+  image.src=ORB_SHEET_DATA;
+  await image.decode();
+  const project=await window.pfProjectFromSheet(image);
+  if(!manual&&!orbSceneIsEmpty()){status.textContent='Se conservó tu escena guardada.';return;}
+  if(project.width!==256||project.height!==256||project.layers[0].cels.length!==8)throw Error('La hoja no contiene ocho fotogramas válidos.');
+  stopPlayback();
+  project.fps=8;
+  app.p=project;
+  serial=Math.max(...project.layers.map(layer=>layer.id));
+  render();fit();persist();
+  status.textContent='8 fotogramas cargados · 256 × 256 px · 8 FPS. Pulsa ▶ Reproducir.';
+ }catch(error){
+  status.textContent='No se pudo cargar la secuencia: '+error.message;
+ }finally{
+  button.disabled=false;
+  orbLoading=false;
+ }
+}
+
 $('projectPicker').value=MODE;
 $('projectPicker').addEventListener('change',e=>{
  stopPlayback();persist();
@@ -673,7 +723,12 @@ if(MODE==='explosion'||MODE==='orb'){
  const bridge=document.querySelector('.chat-bridge');
  if(bridge)bridge.style.display='none';
 }
+if(MODE==='orb'){
+ $('loadOrbScene').hidden=false;
+ $('loadOrbScene').addEventListener('click',()=>loadOriginalOrbFrames(true));
+}
 render();fit();
+if(MODE==='orb'&&orbSceneIsEmpty())loadOriginalOrbFrames(false);
 })();
 </script>
 </body>
