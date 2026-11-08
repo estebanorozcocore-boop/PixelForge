@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PixelForge — Editor mínimo 1.7</title>
+<title>PixelForge — Editor 1.8</title>
 <style>
 :root{color-scheme:dark;--bg:#0d1220;--panel:#151d2c;--panel2:#1b2638;--stroke:#344157;--text:#f1f5fb;--muted:#a1adc2;--accent:#9b92ff}
 *{box-sizing:border-box}
@@ -15,6 +15,9 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 header{height:59px;display:flex;align-items:center;padding:0 20px;border-bottom:1px solid var(--stroke);background:#121a29;gap:12px}
 header strong{font-size:18px;letter-spacing:-.4px}
 header .sub{color:var(--muted);font-size:12px}
+.scene-picker{margin-left:auto;display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}
+.scene-picker select{max-width:240px;padding:7px 9px;color:var(--text);background:var(--panel2);border:1px solid var(--stroke);border-radius:7px;cursor:pointer}
+@media(max-width:780px){header .sub{display:none}.scene-picker select{max-width:175px}}
 .layout{display:grid;grid-template-columns:192px minmax(0,1fr) 214px;height:calc(100dvh - 59px);min-height:540px}
 aside{background:var(--panel);padding:20px 14px;min-width:0}
 .left{border-right:1px solid var(--stroke)}.right{border-left:1px solid var(--stroke)}
@@ -92,7 +95,12 @@ input[type=color]{padding:2px;width:40px;height:35px;border:1px solid var(--stro
 </style>
 </head>
 <body>
-<header><strong>PixelForge</strong><span class="sub">Editor de píxeles por capas</span></header>
+<header><strong>PixelForge</strong><span class="sub">Editor de píxeles por capas</span>
+<label class="scene-picker">Escena
+<select id="projectPicker" aria-label="Seleccionar escena">
+<option value="default">Mi dibujo</option>
+<option value="explosion">Explosión roja · 24 FPS</option>
+</select></label></header>
 <div class="layout">
   <aside class="left">
     <h2>Herramientas</h2>
@@ -158,11 +166,13 @@ input[type=color]{padding:2px;width:40px;height:35px;border:1px solid var(--stro
     <div class="pixel-dialog-actions"><button type="button" id="dismissInjection">Cerrar</button><button type="button" id="applyInjection">Aplicar colores</button></div>
   </div>
 </dialog>
+<script src="./explosion-scene.js"></script>
 <script>
 (()=>{
 'use strict';
 const $=id=>document.getElementById(id);
-const STORAGE='pixelforge-minimal-v1';
+const MODE=new URLSearchParams(window.location.search).get('scene')==='explosion'?'explosion':'default';
+const STORAGE=MODE==='explosion'?'pixelforge-explosion-scene-v1':'pixelforge-minimal-v1';
 const CHAT_SEEN_KEY='pixelforge-chat-applied-v1';
 let serial=1;
 const fresh=(w=32,h=32)=>({width:w,height:h,fps:12,frame:0,selected:1,layers:[{id:1,name:'Capa 1',visible:true,cels:[Array(w*h).fill(null)]}]});
@@ -183,7 +193,9 @@ function validate(saved){
  serial=n;
  return saved;
 }
-try{const saved=JSON.parse(localStorage.getItem(STORAGE));app.p=validate(saved)||fresh();}catch{app.p=fresh();}
+function initialProject(){return MODE==='explosion'?createExplosionScene():fresh();}
+try{const saved=JSON.parse(localStorage.getItem(STORAGE));app.p=validate(saved)||initialProject();}catch{app.p=initialProject();}
+serial=Math.max(serial,...app.p.layers.map(layer=>layer.id));
 const p=()=>app.p;
 const selected=()=>p().layers.find(l=>l.id===p().selected);
 function persist(){try{localStorage.setItem(STORAGE,JSON.stringify(p()));}catch{/* almacenamiento local no disponible */}}
@@ -620,6 +632,18 @@ const observeStage=()=>{
 };
 if(typeof ResizeObserver!=='undefined')new ResizeObserver(observeStage).observe($('stage'));
 else window.addEventListener('resize',observeStage);
+$('projectPicker').value=MODE;
+$('projectPicker').addEventListener('change',e=>{
+ stopPlayback();persist();
+ const target=new URL(location.href);
+ if(e.target.value==='explosion')target.searchParams.set('scene','explosion');
+ else target.searchParams.delete('scene');
+ location.assign(target.toString());
+});
+if(MODE==='explosion'){
+ const bridge=document.querySelector('.chat-bridge');
+ if(bridge)bridge.style.display='none';
+}
 render();fit();
 })();
 </script>
