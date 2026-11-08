@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PixelForge — Editor mínimo 1.6</title>
+<title>PixelForge — Editor mínimo 1.7</title>
 <style>
 :root{color-scheme:dark;--bg:#0d1220;--panel:#151d2c;--panel2:#1b2638;--stroke:#344157;--text:#f1f5fb;--muted:#a1adc2;--accent:#9b92ff}
 *{box-sizing:border-box}
@@ -69,6 +69,13 @@ input[type=color]{padding:2px;width:40px;height:35px;border:1px solid var(--stro
 .layer-name{padding:6px 2px;flex:1;min-width:0;background:none;border:none;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}
 .eye{padding:5px 7px;min-width:31px;border:0;background:none;font-size:15px;color:#bbcae2}
 .eye.off{opacity:.45}
+.chat-bridge{margin-top:20px;padding-top:14px;border-top:1px solid var(--stroke);display:flex;flex-direction:column;gap:8px}
+.chat-bridge h2{margin:0}
+#chatToggle{width:100%;padding:8px 6px;font-weight:600}
+#chatToggle[aria-pressed="true"]{border-color:#67c9a1;background:#164b3c;color:#d3ffec}
+#chatStatus{font-size:11px;color:var(--muted);line-height:1.45;overflow-wrap:anywhere}
+#chatStatus.error{color:#ff9b9b}
+#chatStatus.success{color:#9de4b9}
 .pixel-dialog{width:min(740px,calc(100vw - 48px));max-height:calc(100dvh - 48px);padding:0;border:1px solid var(--stroke);border-radius:12px;background:var(--panel);color:var(--text);box-shadow:0 24px 90px #000b}
 .pixel-dialog::backdrop{background:#020715bf}
 .pixel-dialog-head{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:14px 17px;border-bottom:1px solid var(--stroke)}
@@ -125,6 +132,11 @@ input[type=color]{padding:2px;width:40px;height:35px;border:1px solid var(--stro
   <aside class="right" aria-label="Capas">
     <div class="layers-head"><h2>Capas</h2><button type="button" class="add" id="addLayer">+ Capa</button></div>
     <div id="layers"></div>
+    <div class="chat-bridge">
+      <h2>ChatGPT</h2>
+      <button id="chatToggle" aria-pressed="false" type="button">Conectar chat</button>
+      <div id="chatStatus" role="status" aria-live="polite">Desconectado. La conexión recibe cambios desde GitHub sin base de datos.</div>
+    </div>
   </aside>
 </div>
 <dialog id="pixelDialog" class="pixel-dialog" aria-labelledby="pixelDialogTitle">
@@ -151,6 +163,7 @@ input[type=color]{padding:2px;width:40px;height:35px;border:1px solid var(--stro
 'use strict';
 const $=id=>document.getElementById(id);
 const STORAGE='pixelforge-minimal-v1';
+const CHAT_SEEN_KEY='pixelforge-chat-applied-v1';
 let serial=1;
 const fresh=(w=32,h=32)=>({width:w,height:h,fps:12,frame:0,selected:1,layers:[{id:1,name:'Capa 1',visible:true,cels:[Array(w*h).fill(null)]}]});
 let textFrame=null;
@@ -392,6 +405,113 @@ function applyInjection(){
   'success'
  );
 }
+
+/* Puente de comandos ChatGPT -> GitHub -> Vercel -> navegador.
+   No existe escritura directa en el navegador ni almacenamiento remoto de dibujos. */
+const chatLink={enabled:false,timer:null,busy:false,seen:new Set()};
+try {
+ const saved=JSON.parse(localStorage.getItem(CHAT_SEEN_KEY)||'[]');
+ if(Array.isArray(saved))for(const id of saved){if(typeof id==='string'&&id.length<160)chatLink.seen.add(id);}
+}catch{}
+function chatMessage(message,kind=''){
+ $('chatStatus').textContent=message;
+ $('chatStatus').className=kind;
+}
+function persistChatSeen(){
+ try {localStorage.setItem(CHAT_SEEN_KEY,JSON.stringify(Array.from(chatLink.seen).slice(-300)));} catch{}
+}
+function decodeChatCommand(cmd){
+ if(!cmd||typeof cmd!=='object'||typeof cmd.id!=='string'||cmd.id.length<3||cmd.id.length>120)
+  throw Error('Instrucción sin identificador válido.');
+ if(cmd.type!=='pixels')throw Error('Solo se permiten instrucciones de píxeles.');
+ if(!Number.isInteger(cmd.frame)||cmd.frame<1||cmd.frame>72)
+  throw Error('Fotograma inválido (1 a 72).');
+ if(typeof cmd.layer!=='string'||!cmd.layer.trim()||cmd.layer.length>60)
+  throw Error('Capa inválida.');
+ if(cmd.width!==undefined&&cmd.width!==p().width||cmd.height!==undefined&&cmd.height!==p().height)
+  throw Error('Esta instrucción necesita una hoja de '+cmd.width+' × '+cmd.height+' px; ajusta la hoja primero.');
+ const points=cmd.pixels;
+ if(!Array.isArray(points)||!points.length||points.length>p().width*p().height)
+  throw Error('La instrucción debe incluir píxeles válidos.');
+ const updates=new Map();
+ for(const pixel of points){
+  const item=Array.isArray(pixel)?pixel:[pixel?.x,pixel?.y,pixel?.color];
+  const [x,y,value]=item;
+  if(!Number.isInteger(x)||!Number.isInteger(y)||x<1||x>p().width||y<1||y>p().height)
+   throw Error('Coordenada fuera de la hoja: '+x+','+y);
+  if(typeof value!=='string'||!/^#[0-9a-f]{6}$|^transparente$/i.test(value))
+   throw Error('Color inválido en '+x+','+y);
+  const index=(y-1)*p().width+(x-1);
+  if(updates.has(index))throw Error('Coordenada repetida: '+x+','+y);
+  updates.set(index,/^transparente$/i.test(value)?null:value.toUpperCase());
+ }
+ return {frame:cmd.frame-1,layer:cmd.layer.trim(),updates};
+}
+function applyChatCommand(cmd){
+ const patch=decodeChatCommand(cmd);
+ let layer=p().layers.find(l=>l.name===patch.layer);
+ if(!layer && p().layers.length>=24)throw Error('No puedes crear más de 24 capas.');
+ // Solo crear/editar la capa cuyo nombre envió ChatGPT; nunca tocar capas distintas.
+ if(!layer){
+  const id=++serial;
+  layer={id,name:patch.layer,visible:true,cels:Array.from({length:selected().cels.length},
+   ()=>Array(p().width*p().height).fill(null))};
+  p().layers.push(layer);
+ }
+ while(layer.cels.length<=patch.frame){
+  if(layer.cels.length>=72)throw Error('Límite de 72 fotogramas.');
+  for(const each of p().layers)each.cels.push([...each.cels.at(-1)]);
+ }
+ let changed=0;
+ const cel=layer.cels[patch.frame];
+ for(const [index,color] of patch.updates){
+  if(cel[index]!==color){cel[index]=color;changed++;}
+ }
+ return changed;
+}
+async function pollChatCommands(){
+ if(!chatLink.enabled||chatLink.busy||document.hidden||app.drawing)return;
+ chatLink.busy=true;
+ try{
+  const response=await fetch('./chat-commands.json?fresh='+Date.now(),{cache:'no-store'});
+  if(!response.ok)throw Error('No se pudo obtener el archivo de instrucciones ('+response.status+').');
+  const packet=await response.json();
+  if(packet.schema!==1||!Array.isArray(packet.commands)||packet.commands.length>100)
+   throw Error('Formato de comandos incompatible.');
+  let received=0,changed=0;
+  for(const cmd of packet.commands){
+   if(chatLink.seen.has(cmd.id))continue;
+   if(!chatLink.enabled)return;
+   if(app.drawing||$('injectDialog').open||$('pixelDialog').open)break;
+   const count=applyChatCommand(cmd);
+   chatLink.seen.add(cmd.id);received++;changed+=count;
+  }
+  if(received){
+   stopPlayback();render();persist();persistChatSeen();
+   chatMessage('Sincronizado: '+received+' instrucción(es), '+changed+' píxel(es) actualizados.','success');
+  } else {
+   chatMessage('Conectado · sin cambios nuevos.','success');
+  }
+ }catch(error){chatMessage('Conexión: '+error.message,'error');}
+ finally{chatLink.busy=false;}
+}
+function toggleChat(){
+ chatLink.enabled=!chatLink.enabled;
+ const button=$('chatToggle');
+ button.textContent=chatLink.enabled?'Desconectar chat':'Conectar chat';
+ button.setAttribute('aria-pressed',String(chatLink.enabled));
+ if(chatLink.enabled){
+  chatMessage('Conectando con GitHub…');
+  pollChatCommands();
+  chatLink.timer=setInterval(pollChatCommands,4000);
+ }else{
+  if(chatLink.timer){clearInterval(chatLink.timer);chatLink.timer=null;}
+  chatMessage('Desconectado. Los dibujos permanecen guardados en este navegador.');
+ }
+}
+$('chatToggle').addEventListener('click',toggleChat);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&chatLink.enabled)pollChatCommands();});
+
 function renderFrames(){const area=$('frames');area.replaceChildren();for(let f=0;f<selected().cels.length;f++){
  const frame=document.createElement('div');frame.className='frame'+(f===p().frame?' selected':'');frame.dataset.frame=f;
  const button=document.createElement('button');button.type='button';button.className='frame-select';button.setAttribute('aria-label','Seleccionar fotograma '+(f+1));
