@@ -227,12 +227,12 @@ function validate(saved){
  return saved;
 }
 function initialProject(){return MODE==='explosion'?createExplosionScene():MODE==='orb'?fresh(256,256):MODE==='green'?createGreenProjectileScene():MODE==='ice'?createIceSequenceScene():MODE==='sword'?fresh(256,256):MODE==='rig'?createRigSilhouetteScene():fresh();}
-try{const raw=JSON.parse(localStorage.getItem(STORAGE));app.p=validate(window.pfUnpackProject(raw))||initialProject();}catch{app.p=initialProject();}
+try{const raw=JSON.parse(localStorage.getItem(STORAGE));app.p=validate(MODE==='rig'&&raw?.format==='pf-rle-v1'?window.pfRigUnpack(raw):window.pfUnpackProject(raw))||initialProject();}catch{app.p=initialProject();}
 serial=Math.max(serial,...app.p.layers.map(layer=>layer.id));
 const p=()=>app.p;
 const selected=()=>p().layers.find(l=>l.id===p().selected);
 function persist(){
- try{localStorage.setItem(STORAGE,JSON.stringify(window.pfPackProject(p())));$('storageStatus').textContent='';}
+ try{localStorage.setItem(STORAGE,JSON.stringify(MODE==='rig'?window.pfRigPack(p()):window.pfPackProject(p())));$('storageStatus').textContent='';}
  catch(error){$('storageStatus').textContent='No se pudo guardar el dibujo: '+error.message;}
 }
 function drawComposite(ctx,frame){

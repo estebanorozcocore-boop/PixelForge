@@ -156,3 +156,57 @@
   window.pfRigKeyframes=KEYS;
   window.pfRigDrawGuides=drawRigGuides;
 })();
+
+
+/* Persistencia RLE: escenas articuladas con píxeles editables y espacio reducido. */
+(function(){
+'use strict';
+function packRig(project){
+ const palette=[null],lookup=new Map([[null,0]]);
+ for(const l of project.layers)for(const cel of l.cels)for(const color of cel){
+  if(!lookup.has(color)){
+   if(palette.length>=65536)throw Error('La paleta supera 65535 colores.');
+   lookup.set(color,palette.length);palette.push(color);
+  }
+ }
+ const depth=palette.length<=256?1:2;
+ function encode(cel){
+  let bytes=[],i=0;
+  while(i<cel.length){
+   const val=cel[i];let j=i+1;while(j<cel.length&&j-i<255&&cel[j]===val)j++;
+   const idx=lookup.get(val);bytes.push(j-i,idx&255);
+   if(depth===2)bytes.push(idx>>8);
+   i=j;
+  }
+  let raw='';for(let k=0;k<bytes.length;k+=8192)raw+=String.fromCharCode(...bytes.slice(k,k+8192));
+  return btoa(raw);
+ }
+ return{format:'pf-rle-v1',width:project.width,height:project.height,fps:project.fps,frame:project.frame,selected:project.selected,
+  palette,depth,layers:project.layers.map(l=>({id:l.id,name:l.name,visible:l.visible,cels:l.cels.map(encode)}))};
+}
+function unpackRig(item){
+ if(item?.format!=='pf-rle-v1')throw Error('Formato de silueta inválido.');
+ const{width,height,depth,palette,layers}=item;
+ if(!Number.isInteger(width)||!Number.isInteger(height)||width<8||height<8||width>512||height>512||
+   ![1,2].includes(depth)||!Array.isArray(palette)||palette[0]!==null||palette.length>65536||
+   !Array.isArray(layers)||!layers.length||layers.length>24||!Array.isArray(layers[0].cels)||!layers[0].cels.length||layers[0].cels.length>72||
+   width*height*layers.length*layers[0].cels.length>4194304||layers.some(l=>l.cels.length!==layers[0].cels.length))
+   throw Error('Proyecto de silueta inválido o excesivo.');
+ function decode(b64){
+  if(typeof b64!=='string')throw Error('Fotograma inválido.');
+  const raw=atob(b64),chunk=1+depth;
+  if(raw.length%chunk)throw Error('Longitud RLE inválida.');
+  const cel=new Array(width*height);let pos=0;
+  for(let k=0;k<raw.length;k+=chunk){
+   const run=raw.charCodeAt(k),idx=raw.charCodeAt(k+1)+(depth===2?256*raw.charCodeAt(k+2):0);
+   if(!run||idx>=palette.length||pos+run>cel.length)throw Error('Secuencia RLE corrupta.');
+   cel.fill(palette[idx],pos,pos+run);pos+=run;
+  }
+  if(pos!==cel.length)throw Error('Faltan píxeles RLE.');
+  return cel;
+ }
+ return{width,height,fps:item.fps,frame:item.frame,selected:item.selected,
+  layers:layers.map(l=>({id:l.id,name:l.name,visible:l.visible,cels:l.cels.map(decode)}))};
+}
+window.pfRigPack=packRig;window.pfRigUnpack=unpackRig;
+})();
