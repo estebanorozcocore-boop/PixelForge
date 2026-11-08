@@ -92,6 +92,8 @@ input[type=color]{padding:2px;width:40px;height:35px;border:1px solid var(--stro
 .pixel-dialog-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 #applyPixelText,#applyInjection{background:#3c3479;border-color:#796cf0;font-weight:650}
 @media (max-width:850px){.layout{grid-template-columns:148px minmax(0,1fr) 166px}.left,.right{padding:15px 9px}.canvas-stage{padding:10px}.viewer-top{padding:11px}}
+.rig-scene .paper,.rig-scene .thumb{background:#fff;background-image:none}
+.rig-guide{position:absolute;top:0;left:0;width:100%;height:100%;image-rendering:pixelated;pointer-events:none}
 </style>
 </head>
 <body>
@@ -104,6 +106,7 @@ input[type=color]{padding:2px;width:40px;height:35px;border:1px solid var(--stro
 <option value="green">Proyectil espectral verde · 24 FPS</option>
 <option value="ice">Invocación de hielo · 6 poses</option>
 <option value="sword">Caballero de luz · impacto explosivo</option>
+<option value="rig">Silueta maestra · espadón articulado</option>
 </select></label></header>
 <div class="layout">
   <aside class="left">
@@ -142,7 +145,7 @@ input[type=color]{padding:2px;width:40px;height:35px;border:1px solid var(--stro
           <button type="button" id="fitView" title="Centrar y ajustar el lienzo a la ventana">Ajustar</button>
         </div>
       </div>
-      <div class="canvas-stage" id="stage" title="Rueda: zoom · Espacio + arrastrar, o botón central: mover"><div class="paper" id="paper"><canvas id="canvas" width="32" height="32" aria-label="Lienzo para dibujar"></canvas><div class="pixel-grid" id="grid"></div></div></div>
+      <div class="canvas-stage" id="stage" title="Rueda: zoom · Espacio + arrastrar, o botón central: mover"><div class="paper" id="paper"><canvas id="canvas" width="32" height="32" aria-label="Lienzo para dibujar"></canvas><canvas id="rigGuide" class="rig-guide" aria-hidden="true" width="192" height="128" hidden></canvas><div class="pixel-grid" id="grid"></div></div></div>
     </section>
     <section class="timeline" aria-label="Fotogramas">
       <div class="timeline-head"><h2>Fotogramas</h2><div class="timeline-actions"><button type="button" id="playPause" class="play-button" aria-pressed="false">▶ Reproducir</button><label class="fps-control">FPS <input type="number" id="fps" min="1" max="60" step="1" value="12" aria-label="Fotogramas por segundo"></label><button type="button" class="add" id="addFrame">+ Fotograma</button></div></div>
@@ -152,7 +155,16 @@ input[type=color]{padding:2px;width:40px;height:35px;border:1px solid var(--stro
   <aside class="right" aria-label="Capas">
     <div class="layers-head"><h2>Capas</h2><button type="button" class="add" id="addLayer">+ Capa</button></div>
     <div id="layers"></div>
-    <div class="chat-bridge">
+    <div id="rigControls" hidden style="border:1px solid #53637d;padding:10px;border-radius:9px;margin-top:12px">
+   <h2>Esqueleto maestro</h2>
+   <div class="small">32 fotogramas · 24 FPS · un cuerpo articulado y un espadón de tamaño constante.</div>
+   <label class="small" style="display:flex;align-items:center;gap:7px;margin:10px 0">
+     <input type="checkbox" id="rigBones"> Mostrar articulaciones
+   </label>
+   <button type="button" id="regenerateRig" style="width:100%">Regenerar desde el modelo</button>
+   <div class="small" id="rigStatus" role="status" aria-live="polite" style="margin-top:8px">Las capas siguen siendo editables.</div>
+ </div>
+ <div class="chat-bridge">
       <h2>ChatGPT</h2>
       <button id="chatToggle" aria-pressed="false" type="button">Conectar chat</button>
       <div id="chatStatus" role="status" aria-live="polite">Desconectado. La conexión recibe cambios desde GitHub sin base de datos.</div>
@@ -183,13 +195,15 @@ input[type=color]{padding:2px;width:40px;height:35px;border:1px solid var(--stro
 <script src="./green-projectile-scene.js"></script>
 <script src="./ice-sequence-scene.js"></script>
 <script src="./sword-impact-scene.js"></script>
+<script src="./rig-silhouette-scene.js"></script>
 <script>
 (()=>{
 'use strict';
 const $=id=>document.getElementById(id);
 const rawMode=new URLSearchParams(window.location.search).get('scene');
-const MODE=rawMode==='explosion'?'explosion':rawMode==='orb'?'orb':rawMode==='green'?'green':rawMode==='ice'?'ice':rawMode==='sword'?'sword':'default';
-const STORAGE=MODE==='explosion'?'pixelforge-explosion-scene-v1':MODE==='orb'?'pixelforge-orb-scene-v1':MODE==='green'?'pixelforge-green-projectile-v1':MODE==='ice'?'pixelforge-ice-sequence-v1':MODE==='sword'?'pixelforge-sword-impact-v1':'pixelforge-minimal-v1';
+const MODE=rawMode==='explosion'?'explosion':rawMode==='orb'?'orb':rawMode==='green'?'green':rawMode==='ice'?'ice':rawMode==='sword'?'sword':rawMode==='rig'?'rig':'default';
+const STORAGE=MODE==='explosion'?'pixelforge-explosion-scene-v1':MODE==='orb'?'pixelforge-orb-scene-v1':MODE==='green'?'pixelforge-green-projectile-v1':MODE==='ice'?'pixelforge-ice-sequence-v1':MODE==='sword'?'pixelforge-sword-impact-v1':MODE==='rig'?'pixelforge-rig-silhouette-v1':'pixelforge-minimal-v1';
+if(MODE==='rig')document.body.classList.add('rig-scene');
 const MAX_CELLS=4194304,MAX_DIM=512;
 function totalCells(){return p().width*p().height*p().layers.length*selected().cels.length;}
 const CHAT_SEEN_KEY='pixelforge-chat-applied-v1';
@@ -212,7 +226,7 @@ function validate(saved){
  serial=n;
  return saved;
 }
-function initialProject(){return MODE==='explosion'?createExplosionScene():MODE==='orb'?fresh(256,256):MODE==='green'?createGreenProjectileScene():MODE==='ice'?createIceSequenceScene():MODE==='sword'?fresh(256,256):fresh();}
+function initialProject(){return MODE==='explosion'?createExplosionScene():MODE==='orb'?fresh(256,256):MODE==='green'?createGreenProjectileScene():MODE==='ice'?createIceSequenceScene():MODE==='sword'?fresh(256,256):MODE==='rig'?createRigSilhouetteScene():fresh();}
 try{const raw=JSON.parse(localStorage.getItem(STORAGE));app.p=validate(window.pfUnpackProject(raw))||initialProject();}catch{app.p=initialProject();}
 serial=Math.max(serial,...app.p.layers.map(layer=>layer.id));
 const p=()=>app.p;
@@ -235,7 +249,8 @@ function drawComposite(ctx,frame){
  }
  ctx.putImageData(out,0,0);
 }
-function drawPage(){const c=$('canvas');if(c.width!==p().width||c.height!==p().height){c.width=p().width;c.height=p().height;}drawComposite(c.getContext('2d'),p().frame);}
+function drawPage(){const c=$('canvas');if(c.width!==p().width||c.height!==p().height){c.width=p().width;c.height=p().height;}drawComposite(c.getContext('2d'),p().frame);
+if(MODE==='rig'){const guide=$('rigGuide');if(guide){if(guide.width!==p().width||guide.height!==p().height){guide.width=p().width;guide.height=p().height;}const ctx=guide.getContext('2d');ctx.clearRect(0,0,guide.width,guide.height);if($('rigBones').checked)window.pfRigDrawGuides(ctx,p().frame);}}}
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 function setView(){
  const v=app.view,{width,height}=p();
@@ -742,13 +757,23 @@ $('projectPicker').value=MODE;
 $('projectPicker').addEventListener('change',e=>{
  stopPlayback();persist();
  const target=new URL(location.href);
- if(['explosion','orb','green','ice','sword'].includes(e.target.value))target.searchParams.set('scene',e.target.value);
+ if(['explosion','orb','green','ice','sword','rig'].includes(e.target.value))target.searchParams.set('scene',e.target.value);
  else target.searchParams.delete('scene');
  location.assign(target.toString());
 });
-if(['explosion','orb','green','ice','sword'].includes(MODE)){
+if(['explosion','orb','green','ice','sword','rig'].includes(MODE)){
  const bridge=document.querySelector('.chat-bridge');
  if(bridge)bridge.style.display='none';
+}
+if(MODE==='rig'){
+ $('rigControls').hidden=false;
+ $('rigGuide').hidden=false;
+ $('rigBones').addEventListener('change',drawPage);
+ $('regenerateRig').addEventListener('click',()=>{
+   if(!confirm('¿Reemplazar los 32 fotogramas de esta escena por el modelo maestro? Los retoques hechos en esta escena se perderán.'))return;
+   stopPlayback();app.p=createRigSilhouetteScene();serial=4;render();fit();persist();
+   $('rigStatus').textContent='Silueta maestra recreada: 32 fotogramas con geometría y articulaciones consistentes.';
+ });
 }
 if(MODE==='orb'){
  $('loadOrbScene').hidden=false;
