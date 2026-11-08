@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PixelForge — Editor 2.2</title>
+<title>PixelForge — Editor 2.3</title>
 <style>
 :root{color-scheme:dark;--bg:#0d1220;--panel:#151d2c;--panel2:#1b2638;--stroke:#344157;--text:#f1f5fb;--muted:#a1adc2;--accent:#9b92ff}
 *{box-sizing:border-box}
@@ -103,6 +103,7 @@ input[type=color]{padding:2px;width:40px;height:35px;border:1px solid var(--stro
 <option value="orb">Orbe mágico · 8 poses</option>
 <option value="green">Proyectil espectral verde · 24 FPS</option>
 <option value="ice">Invocación de hielo · 6 poses</option>
+<option value="sword">Caballero de luz · impacto explosivo</option>
 </select></label></header>
 <div class="layout">
   <aside class="left">
@@ -181,13 +182,14 @@ input[type=color]{padding:2px;width:40px;height:35px;border:1px solid var(--stro
 <script src="./sprite-support.js"></script>
 <script src="./green-projectile-scene.js"></script>
 <script src="./ice-sequence-scene.js"></script>
+<script src="./sword-impact-scene.js"></script>
 <script>
 (()=>{
 'use strict';
 const $=id=>document.getElementById(id);
 const rawMode=new URLSearchParams(window.location.search).get('scene');
-const MODE=rawMode==='explosion'?'explosion':rawMode==='orb'?'orb':rawMode==='green'?'green':rawMode==='ice'?'ice':'default';
-const STORAGE=MODE==='explosion'?'pixelforge-explosion-scene-v1':MODE==='orb'?'pixelforge-orb-scene-v1':MODE==='green'?'pixelforge-green-projectile-v1':MODE==='ice'?'pixelforge-ice-sequence-v1':'pixelforge-minimal-v1';
+const MODE=rawMode==='explosion'?'explosion':rawMode==='orb'?'orb':rawMode==='green'?'green':rawMode==='ice'?'ice':rawMode==='sword'?'sword':'default';
+const STORAGE=MODE==='explosion'?'pixelforge-explosion-scene-v1':MODE==='orb'?'pixelforge-orb-scene-v1':MODE==='green'?'pixelforge-green-projectile-v1':MODE==='ice'?'pixelforge-ice-sequence-v1':MODE==='sword'?'pixelforge-sword-impact-v1':'pixelforge-minimal-v1';
 const MAX_CELLS=4194304,MAX_DIM=512;
 function totalCells(){return p().width*p().height*p().layers.length*selected().cels.length;}
 const CHAT_SEEN_KEY='pixelforge-chat-applied-v1';
@@ -210,7 +212,7 @@ function validate(saved){
  serial=n;
  return saved;
 }
-function initialProject(){return MODE==='explosion'?createExplosionScene():MODE==='orb'?fresh(256,256):MODE==='green'?createGreenProjectileScene():MODE==='ice'?createIceSequenceScene():fresh();}
+function initialProject(){return MODE==='explosion'?createExplosionScene():MODE==='orb'?fresh(256,256):MODE==='green'?createGreenProjectileScene():MODE==='ice'?createIceSequenceScene():MODE==='sword'?fresh(256,256):fresh();}
 try{const raw=JSON.parse(localStorage.getItem(STORAGE));app.p=validate(window.pfUnpackProject(raw))||initialProject();}catch{app.p=initialProject();}
 serial=Math.max(serial,...app.p.layers.map(layer=>layer.id));
 const p=()=>app.p;
@@ -715,15 +717,36 @@ async function loadOriginalOrbFrames(manual=false){
  }
 }
 
+function swordSceneIsEmpty(){
+ if(MODE!=='sword')return false;
+ const a=p();
+ return a.width===256&&a.height===256&&a.layers.length===1&&
+  a.layers[0].cels.length===1&&a.layers[0].cels[0].every(v=>v===null);
+}
+let swordSceneLoading=false;
+async function loadSwordScene(){
+ if(MODE!=='sword'||swordSceneLoading||!swordSceneIsEmpty())return;
+ swordSceneLoading=true;
+ const status=$('importStatus');status.textContent='Creando los 24 fotogramas del espadón y la explosión…';
+ try{
+  const scene=await window.pfCreateSwordImpactScene();
+  if(!swordSceneIsEmpty())return;
+  stopPlayback();app.p=scene;
+  serial=Math.max(serial,...scene.layers.map(l=>l.id));
+  render();fit();persist();
+  status.textContent='24 fotogramas · 256 × 256 px · 24 FPS · Espadón e impacto cargados.';
+ }catch(e){status.textContent='No se pudo cargar la escena: '+e.message;}
+ finally{swordSceneLoading=false;}
+}
 $('projectPicker').value=MODE;
 $('projectPicker').addEventListener('change',e=>{
  stopPlayback();persist();
  const target=new URL(location.href);
- if(['explosion','orb','green','ice'].includes(e.target.value))target.searchParams.set('scene',e.target.value);
+ if(['explosion','orb','green','ice','sword'].includes(e.target.value))target.searchParams.set('scene',e.target.value);
  else target.searchParams.delete('scene');
  location.assign(target.toString());
 });
-if(['explosion','orb','green','ice'].includes(MODE)){
+if(['explosion','orb','green','ice','sword'].includes(MODE)){
  const bridge=document.querySelector('.chat-bridge');
  if(bridge)bridge.style.display='none';
 }
@@ -733,6 +756,7 @@ if(MODE==='orb'){
 }
 render();fit();
 if(MODE==='orb'&&orbSceneIsEmpty())loadOriginalOrbFrames(false);
+if(MODE==='sword'&&swordSceneIsEmpty())loadSwordScene();
 })();
 </script>
 </body>

@@ -30,6 +30,20 @@
    }
    let raw='';
    for(let j=0;j<bytes.length;j+=8192)raw+=String.fromCharCode(...bytes.subarray(j,j+8192));
+   if(depth===1){
+    let empty=0;for(let i=0;i<cel.length;i++)if(cel[i]===null)empty++;
+    if(empty>cel.length*.5){
+     const runs=[];
+     for(let i=0;i<bytes.length;){
+      let j=i+1;while(j<bytes.length&&bytes[j]===bytes[i]&&j-i<65535)j++;
+      const size=j-i;runs.push(bytes[i],size&255,size>>8);i=j;
+     }
+     if(runs.length+8<bytes.length){
+      let compact='';for(let i=0;i<runs.length;i+=8192)compact+=String.fromCharCode(...runs.slice(i,i+8192));
+      return 'rle:'+btoa(compact);
+     }
+    }
+   }
    return btoa(raw);
   }
   return{format:'pf-palette-v1',width:project.width,height:project.height,fps:project.fps,
@@ -44,6 +58,19 @@
   const size=item.width*item.height,depth=item.depth,palette=item.palette;
   function decode(b64){
    if(typeof b64!=='string')throw Error('Datos inválidos.');
+   if(b64.startsWith('rle:')){
+    if(depth!==1)throw Error('Codificación no compatible.');
+    const bits=atob(b64.slice(4)),cel=Array(size);
+    if(bits.length%3)throw Error('Secuencia RLE incompleta.');
+    let pos=0;
+    for(let j=0;j<bits.length;j+=3){
+     const id=bits.charCodeAt(j),n=bits.charCodeAt(j+1)|(bits.charCodeAt(j+2)<<8);
+     if(id>=palette.length||n<1||pos+n>size)throw Error('Secuencia RLE inválida.');
+     cel.fill(palette[id],pos,pos+n);pos+=n;
+    }
+    if(pos!==size)throw Error('Longitud RLE inválida.');
+    return cel;
+   }
    const raw=atob(b64);
    if(raw.length!==size*depth)throw Error('Longitud de fotograma inválida.');
    const cel=Array(size);
